@@ -42,6 +42,34 @@ class GameEngine:
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
             self.player.move(self.player.speed, self.width)
 
+    def _resolve_player_bullet_hits(self):
+        """Check every player bullet against every alive enemy.
+
+        Nothing is removed while looping. Hits are collected first and
+        applied afterwards, so every bullet gets checked every frame.
+        Each bullet can destroy at most one enemy, and each enemy can be
+        destroyed (and scored) at most once per frame.
+        """
+        enemies = self.enemy_grid.alive_enemies()
+        hit_enemies = set()
+        spent_bullets = set()
+
+        for bullet in self.player_bullets:
+            bullet_rect = bullet.rect()
+            for enemy in enemies:
+                if enemy in hit_enemies:
+                    continue  # already claimed by another bullet this frame
+                if bullet_rect.colliderect(enemy.rect()):
+                    hit_enemies.add(enemy)
+                    spent_bullets.add(bullet)
+                    break  # one bullet destroys only one enemy
+
+        # Apply results after all detection is done
+        for enemy in hit_enemies:
+            enemy.alive = False
+        self.score += len(hit_enemies)
+        self.player_bullets = [b for b in self.player_bullets if b not in spent_bullets]
+
     def update(self):
         if self.game_over:
             return
@@ -66,18 +94,7 @@ class GameEngine:
         self.player_bullets = [b for b in self.player_bullets if not b.off_screen(self.height)]
         self.enemy_bullets = [b for b in self.enemy_bullets if not b.off_screen(self.height)]
 
-        # NOTE: this removes a bullet from player_bullets while iterating
-        # directly over that same list. Python skips the element right
-        # after a removed one, so when two enemies are hit on the same
-        # frame the second collision can be missed - the bullet appears
-        # to pass straight through. See Task 1 in the README.
-        for bullet in self.player_bullets:
-            for enemy in self.enemy_grid.alive_enemies():
-                if bullet.rect().colliderect(enemy.rect()):
-                    enemy.alive = False
-                    self.player_bullets.remove(bullet)
-                    self.score += 1
-                    break
+        self._resolve_player_bullet_hits()
 
         for bullet in self.enemy_bullets:
             if bullet.rect().colliderect(self.player.rect()):
