@@ -10,13 +10,24 @@ WHITE = (255, 255, 255)
 GREEN = (0, 200, 0)
 RED = (220, 60, 60)
 
+GAME_OVER_INPUT_DELAY = 30  # frames (~0.5s at 60 FPS) before a key press is accepted
+
 class GameEngine:
     def __init__(self, width, height):
         self.width = width
         self.height = height
 
-        self.player = Player(width // 2 - 20, height - 50, 40, 20)
-        self.enemy_grid = EnemyGrid(width)
+        self.font = pygame.font.SysFont("Arial", 30)
+        self.title_font = pygame.font.SysFont("Arial", 64, bold=True)
+        self.prompt_font = pygame.font.SysFont("Arial", 24)
+
+        self.should_quit = False
+        self.reset()
+
+    def reset(self):
+        """Start a fresh game. Rebuilds all world state."""
+        self.player = Player(self.width // 2 - 20, self.height - 50, 40, 20)
+        self.enemy_grid = EnemyGrid(self.width)
 
         self.player_bullets = []
         self.enemy_bullets = []
@@ -25,10 +36,24 @@ class GameEngine:
         self.enemy_fire_chance = 0.01
 
         self.score = 0
-        self.font = pygame.font.SysFont("Arial", 30)
         self.game_over = False
+        self._game_over_timer = 0
+
+    def _trigger_game_over(self):
+        if not self.game_over:
+            self.game_over = True
+            self._game_over_timer = GAME_OVER_INPUT_DELAY
+
+    def _game_over_ready(self):
+        return self.game_over and self._game_over_timer <= 0
 
     def handle_event(self, event):
+        if self.game_over:
+            # Ignore gameplay input; wait for any key once the delay has passed.
+            if event.type == pygame.KEYDOWN and self._game_over_ready():
+                self.should_quit = True  # Task 3 will show the replay menu here instead
+            return
+
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
             if self._shoot_cooldown <= 0:
                 bullet_x = self.player.center_x() - 2
@@ -36,6 +61,9 @@ class GameEngine:
                 self._shoot_cooldown = 15
 
     def handle_input(self):
+        if self.game_over:
+            return
+
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LEFT] or keys[pygame.K_a]:
             self.player.move(-self.player.speed, self.width)
@@ -72,6 +100,9 @@ class GameEngine:
 
     def update(self):
         if self.game_over:
+            # World is frozen; only count down the input delay.
+            if self._game_over_timer > 0:
+                self._game_over_timer -= 1
             return
 
         if self._shoot_cooldown > 0:
@@ -98,11 +129,30 @@ class GameEngine:
 
         for bullet in self.enemy_bullets:
             if bullet.rect().colliderect(self.player.rect()):
-                self.game_over = True
+                self._trigger_game_over()
                 break
 
         if self.enemy_grid.reached_bottom(self.player.y):
-            self.game_over = True
+            self._trigger_game_over()
+
+    def _render_game_over(self, screen):
+        # Dim the frozen game behind the text
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        screen.blit(overlay, (0, 0))
+
+        cx, cy = self.width // 2, self.height // 2
+
+        title = self.title_font.render("GAME OVER", True, RED)
+        screen.blit(title, title.get_rect(center=(cx, cy - 60)))
+
+        score = self.font.render(f"Final Score: {self.score}", True, WHITE)
+        screen.blit(score, score.get_rect(center=(cx, cy + 10)))
+
+        # Prompt appears once input is being accepted
+        if self._game_over_ready():
+            prompt = self.prompt_font.render("Press any key to continue", True, WHITE)
+            screen.blit(prompt, prompt.get_rect(center=(cx, cy + 70)))
 
     def render(self, screen):
         pygame.draw.rect(screen, GREEN, self.player.rect())
@@ -118,7 +168,5 @@ class GameEngine:
         score_text = self.font.render(f"Score: {self.score}", True, WHITE)
         screen.blit(score_text, (10, 10))
 
-        if self.game_over and not getattr(self, "_game_over_logged", False):
-            # NOTE: no proper game-over screen yet - see Task 2 in the README.
-            print("Game over! Final score:", self.score)
-            self._game_over_logged = True
+        if self.game_over:
+            self._render_game_over(screen)
