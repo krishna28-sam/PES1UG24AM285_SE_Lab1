@@ -3,6 +3,7 @@ import random
 from .player import Player
 from .enemy import EnemyGrid
 from .bullet import Bullet
+from .sounds import SoundManager
 
 # Game Engine
 
@@ -40,6 +41,8 @@ class GameEngine:
         self.title_font = pygame.font.SysFont("Arial", 64, bold=True)
         self.prompt_font = pygame.font.SysFont("Arial", 22)
 
+        self.sounds = SoundManager()
+
         self.should_quit = False
         self.difficulty = "Medium"
         self.reset()
@@ -74,6 +77,7 @@ class GameEngine:
             self._game_over_timer = GAME_OVER_INPUT_DELAY
             # Start the menu highlight on the difficulty just played
             self._menu_index = list(DIFFICULTIES).index(self.difficulty)
+            self.sounds.play("game_over")  # inside the guard, so it plays once
 
     def _game_over_ready(self):
         return self.game_over and self._game_over_timer <= 0
@@ -112,6 +116,7 @@ class GameEngine:
                 bullet_x = self.player.center_x() - 2
                 self.player_bullets.append(Bullet(bullet_x, self.player.y, direction=-1))
                 self._shoot_cooldown = 15
+                self.sounds.play("fire")
 
     def handle_input(self):
         if self.game_over:
@@ -150,6 +155,9 @@ class GameEngine:
             enemy.alive = False
         self.score += len(hit_enemies)
         self.player_bullets = [b for b in self.player_bullets if b not in spent_bullets]
+
+        if hit_enemies:
+            self.sounds.play("explosion")  # once per frame, even for a double hit
 
     def update(self):
         if self.game_over:
