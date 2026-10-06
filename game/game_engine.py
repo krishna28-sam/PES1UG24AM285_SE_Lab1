@@ -9,8 +9,27 @@ from .bullet import Bullet
 WHITE = (255, 255, 255)
 GREEN = (0, 200, 0)
 RED = (220, 60, 60)
+YELLOW = (255, 220, 60)
+GREY = (170, 170, 170)
 
-GAME_OVER_INPUT_DELAY = 30  # frames (~0.5s at 60 FPS) before a key press is accepted
+GAME_OVER_INPUT_DELAY = 30  # frames (~0.5s at 60 FPS) before menu input is accepted
+
+# enemy_speed: pixels per frame for the enemy grid
+# fire_chance: chance PER FRAME that ONE randomly chosen enemy fires
+DIFFICULTIES = {
+    "Easy":   {"enemy_speed": 1.0, "fire_chance": 0.006},
+    "Medium": {"enemy_speed": 1.5, "fire_chance": 0.01},
+    "Hard":   {"enemy_speed": 2.5, "fire_chance": 0.02},
+}
+
+# Menu entries in display order: (label, key hint)
+MENU_OPTIONS = [
+    ("Easy", "1"),
+    ("Medium", "2"),
+    ("Hard", "3"),
+    ("Exit", "4 / Esc"),
+]
+EXIT_INDEX = 3
 
 class GameEngine:
     def __init__(self, width, height):
@@ -19,39 +38,73 @@ class GameEngine:
 
         self.font = pygame.font.SysFont("Arial", 30)
         self.title_font = pygame.font.SysFont("Arial", 64, bold=True)
-        self.prompt_font = pygame.font.SysFont("Arial", 24)
+        self.prompt_font = pygame.font.SysFont("Arial", 22)
 
         self.should_quit = False
+        self.difficulty = "Medium"
         self.reset()
 
-    def reset(self):
-        """Start a fresh game. Rebuilds all world state."""
+    def reset(self, difficulty=None):
+        """Start a fresh game. Rebuilds all world state.
+
+        If a difficulty name is given it becomes the current difficulty;
+        otherwise the current one is reused.
+        """
+        if difficulty is not None:
+            self.difficulty = difficulty
+        settings = DIFFICULTIES[self.difficulty]
+
         self.player = Player(self.width // 2 - 20, self.height - 50, 40, 20)
-        self.enemy_grid = EnemyGrid(self.width)
+        self.enemy_grid = EnemyGrid(self.width, speed=settings["enemy_speed"])
 
         self.player_bullets = []
         self.enemy_bullets = []
         self._shoot_cooldown = 0
-        # Chance PER FRAME that ONE randomly chosen enemy fires (~1 shot / 1.7s at 60 FPS)
-        self.enemy_fire_chance = 0.01
+        # Chance PER FRAME that ONE randomly chosen enemy fires
+        self.enemy_fire_chance = settings["fire_chance"]
 
         self.score = 0
         self.game_over = False
         self._game_over_timer = 0
+        self._menu_index = 0
 
     def _trigger_game_over(self):
         if not self.game_over:
             self.game_over = True
             self._game_over_timer = GAME_OVER_INPUT_DELAY
+            # Start the menu highlight on the difficulty just played
+            self._menu_index = list(DIFFICULTIES).index(self.difficulty)
 
     def _game_over_ready(self):
         return self.game_over and self._game_over_timer <= 0
 
+    def _activate_menu_option(self, index):
+        if index == EXIT_INDEX:
+            self.should_quit = True
+        else:
+            self.reset(MENU_OPTIONS[index][0])
+
+    def _handle_menu_key(self, key):
+        if key in (pygame.K_UP, pygame.K_w):
+            self._menu_index = (self._menu_index - 1) % len(MENU_OPTIONS)
+        elif key in (pygame.K_DOWN, pygame.K_s):
+            self._menu_index = (self._menu_index + 1) % len(MENU_OPTIONS)
+        elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self._activate_menu_option(self._menu_index)
+        elif key in (pygame.K_1, pygame.K_KP1):
+            self._activate_menu_option(0)
+        elif key in (pygame.K_2, pygame.K_KP2):
+            self._activate_menu_option(1)
+        elif key in (pygame.K_3, pygame.K_KP3):
+            self._activate_menu_option(2)
+        elif key in (pygame.K_4, pygame.K_KP4, pygame.K_ESCAPE):
+            self._activate_menu_option(EXIT_INDEX)
+
     def handle_event(self, event):
         if self.game_over:
-            # Ignore gameplay input; wait for any key once the delay has passed.
+            # Ignore gameplay input; menu keys only work once the delay has passed.
             if event.type == pygame.KEYDOWN and self._game_over_ready():
-                self.should_quit = True  # Task 3 will show the replay menu here instead
+                self._handle_menu_key(event.key)
             return
 
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
@@ -144,15 +197,32 @@ class GameEngine:
         cx, cy = self.width // 2, self.height // 2
 
         title = self.title_font.render("GAME OVER", True, RED)
-        screen.blit(title, title.get_rect(center=(cx, cy - 60)))
+        screen.blit(title, title.get_rect(center=(cx, cy - 160)))
 
         score = self.font.render(f"Final Score: {self.score}", True, WHITE)
-        screen.blit(score, score.get_rect(center=(cx, cy + 10)))
+        screen.blit(score, score.get_rect(center=(cx, cy - 100)))
 
-        # Prompt appears once input is being accepted
-        if self._game_over_ready():
-            prompt = self.prompt_font.render("Press any key to continue", True, WHITE)
-            screen.blit(prompt, prompt.get_rect(center=(cx, cy + 70)))
+        # Menu appears once input is being accepted
+        if not self._game_over_ready():
+            return
+
+        header = self.prompt_font.render("Play again? Choose a difficulty:", True, WHITE)
+        screen.blit(header, header.get_rect(center=(cx, cy - 45)))
+
+        for i, (label, hint) in enumerate(MENU_OPTIONS):
+            selected = (i == self._menu_index)
+            color = YELLOW if selected else WHITE
+            marker = "> " if selected else "   "
+            y = cy + i * 45
+
+            text = self.font.render(f"{marker}{label}", True, color)
+            screen.blit(text, text.get_rect(midleft=(cx - 130, y)))
+
+            hint_text = self.prompt_font.render(f"[{hint}]", True, GREY)
+            screen.blit(hint_text, hint_text.get_rect(midright=(cx + 140, y)))
+
+        help_text = self.prompt_font.render("Up/Down or W/S to move, Enter to select", True, GREY)
+        screen.blit(help_text, help_text.get_rect(center=(cx, cy + 4 * 45 + 20)))
 
     def render(self, screen):
         pygame.draw.rect(screen, GREEN, self.player.rect())
