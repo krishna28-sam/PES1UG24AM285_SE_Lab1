@@ -21,6 +21,7 @@ class GameEngine:
         self.player_bullets = []
         self.enemy_bullets = []
         self._shoot_cooldown = 0
+        # Chance PER FRAME that ONE randomly chosen enemy fires (~1 shot / 1.7s at 60 FPS)
         self.enemy_fire_chance = 0.01
 
         self.score = 0
@@ -50,10 +51,12 @@ class GameEngine:
 
         self.enemy_grid.move()
 
-        for enemy in self.enemy_grid.alive_enemies():
-            if random.random() < self.enemy_fire_chance:
-                bullet_x = enemy.x + enemy.width // 2
-                self.enemy_bullets.append(Bullet(bullet_x, enemy.y + enemy.height, direction=1))
+        # Roll once per frame, then pick a single enemy to fire.
+        alive = self.enemy_grid.alive_enemies()
+        if alive and random.random() < self.enemy_fire_chance:
+            shooter = random.choice(alive)
+            bullet_x = shooter.x + shooter.width // 2
+            self.enemy_bullets.append(Bullet(bullet_x, shooter.y + shooter.height, direction=1))
 
         for bullet in self.player_bullets:
             bullet.move()
